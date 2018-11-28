@@ -247,6 +247,15 @@ static void mmv( const Dune::FieldMatrix<K, 3, 3>& matrix, const X& x, Y& y )
   y[ 2 ] -= matrix[ 2 ][ 0 ] * x[ 0 ] + matrix[ 2 ][ 1 ] * x[ 1 ] + matrix[ 2 ][ 2 ] * x[ 2 ] ;
 }
 
+template<typename K, int m, int n>
+static Dune::FieldMatrix<K, n, m>&
+multiply (Dune::FieldMatrix<K, n, m>& A, const Dune::FieldMatrix<K, n, m>& B, const Dune::FieldMatrix<K, n, m>&C )
+{
+  A = B;
+  A.rightmultiply( C );
+  return A;
+}
+
 template<typename K, int m, int n, typename M2>
 static Dune::FieldMatrix<K, n, m>&
 leftmultiply (Dune::FieldMatrix<K, n, m>& A, const Dune::DenseMatrix<M2>& B)
@@ -283,7 +292,7 @@ leftmultiply (Dune::FieldMatrix<K, 3, 3>& A, const Dune::FieldMatrix< K, 3, 3>& 
 
 template <typename K, class X, class Y>
 static inline void
-rightmultiply (Dune::FieldMatrix<K, 3, 3>& A, const Dune::FieldMatrix< K, 3, 3>& B, const Dune::FieldMatrix< K, 3, 3>& C)
+multiply (Dune::FieldMatrix<K, 3, 3>& A, const Dune::FieldMatrix< K, 3, 3>& B, const Dune::FieldMatrix< K, 3, 3>& C)
 {
     A[ 0 ][ 0 ] = B[ 0 ][ 0 ] * C[ 0 ][ 0 ] + B[ 0 ][ 1 ] * C[ 1 ][ 0 ] + B[ 0 ][ 2 ] * C[ 2 ][ 0 ];
     A[ 0 ][ 1 ] = B[ 0 ][ 0 ] * C[ 0 ][ 1 ] + B[ 0 ][ 1 ] * C[ 1 ][ 1 ] + B[ 0 ][ 2 ] * C[ 2 ][ 1 ];
@@ -329,7 +338,7 @@ static Dune::FieldMatrix<K, 3, 3>&
 rightmultiply (Dune::FieldMatrix<K, 3, 3>& A, const Dune::FieldMatrix< K, 3, 3>& B)
 {
     Dune::FieldMatrix< K, 3, 3 > tmp( A );
-    rightmultiply( A, tmp, B );
+    multiply( A, tmp, B );
     return A;
 }
 } // namespace MatrixBlockHelp
@@ -370,6 +379,12 @@ public:
     ThisType& leftmultiply (const Dune::DenseMatrix<M2>& M)
     {
       return static_cast< ThisType& > (Ewoms::MatrixBlockHelp::leftmultiply( asBase(), static_cast< const BaseType& > (M) ));
+    }
+
+    //! Multiplies M from the left to this matrix
+    ThisType& leftMultiply (const BaseType& M, BaseType& result ) const
+    {
+      return static_cast< ThisType& > (Ewoms::MatrixBlockHelp::multiply( result, M , asBase() ));
     }
 
     //! Multiplies M from the right to this matrix
