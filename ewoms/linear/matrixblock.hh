@@ -204,11 +204,140 @@ static inline void invertMatrix(Dune::FieldMatrix<K, 4, 4>& matrix)
     else
         matrix *= 1.0/det;
 }
+
+template <typename K, int m, int n, class X, class Y>
+static void mv( const Dune::FieldMatrix<K, n, m>& matrix, const X& x, Y& y )
+{
+    matrix.mv( x, y );
+}
+
+template <typename K, int m, int n, class X, class Y>
+static void umv( const Dune::FieldMatrix<K, n, m>& matrix, const X& x, Y& y )
+{
+    matrix.umv( x, y );
+}
+
+template <typename K, int m, int n, class X, class Y>
+static void mmv( const Dune::FieldMatrix<K, n, m>& matrix, const X& x, Y& y )
+{
+    matrix.mmv( x, y );
+}
+
+template <typename K, class X, class Y>
+static void mv( const Dune::FieldMatrix<K, 3, 3>& matrix, const X& x, Y& y )
+{
+  y[ 0 ] = matrix[ 0 ][ 0 ] * x[ 0 ] + matrix[ 0 ][ 1 ] * x[ 1 ] + matrix[ 0 ][ 2 ] * x[ 2 ] ;
+  y[ 1 ] = matrix[ 1 ][ 0 ] * x[ 0 ] + matrix[ 1 ][ 1 ] * x[ 1 ] + matrix[ 1 ][ 2 ] * x[ 2 ] ;
+  y[ 2 ] = matrix[ 2 ][ 0 ] * x[ 0 ] + matrix[ 2 ][ 1 ] * x[ 1 ] + matrix[ 2 ][ 2 ] * x[ 2 ] ;
+}
+
+template <typename K, class X, class Y>
+static void umv( const Dune::FieldMatrix<K, 3, 3>& matrix, const X& x, Y& y )
+{
+  y[ 0 ] += matrix[ 0 ][ 0 ] * x[ 0 ] + matrix[ 0 ][ 1 ] * x[ 1 ] + matrix[ 0 ][ 2 ] * x[ 2 ] ;
+  y[ 1 ] += matrix[ 1 ][ 0 ] * x[ 0 ] + matrix[ 1 ][ 1 ] * x[ 1 ] + matrix[ 1 ][ 2 ] * x[ 2 ] ;
+  y[ 2 ] += matrix[ 2 ][ 0 ] * x[ 0 ] + matrix[ 2 ][ 1 ] * x[ 1 ] + matrix[ 2 ][ 2 ] * x[ 2 ] ;
+}
+
+template <typename K, class X, class Y>
+static void mmv( const Dune::FieldMatrix<K, 3, 3>& matrix, const X& x, Y& y )
+{
+  y[ 0 ] -= matrix[ 0 ][ 0 ] * x[ 0 ] + matrix[ 0 ][ 1 ] * x[ 1 ] + matrix[ 0 ][ 2 ] * x[ 2 ] ;
+  y[ 1 ] -= matrix[ 1 ][ 0 ] * x[ 0 ] + matrix[ 1 ][ 1 ] * x[ 1 ] + matrix[ 1 ][ 2 ] * x[ 2 ] ;
+  y[ 2 ] -= matrix[ 2 ][ 0 ] * x[ 0 ] + matrix[ 2 ][ 1 ] * x[ 1 ] + matrix[ 2 ][ 2 ] * x[ 2 ] ;
+}
+
+template<typename K, int m, int n, typename M2>
+static Dune::FieldMatrix<K, n, m>&
+leftmultiply (Dune::FieldMatrix<K, n, m>& A, const Dune::DenseMatrix<M2>& B)
+{
+  return A.leftmultiply( B );
+}
+
+template <class K>
+static inline K dot( const Dune::FieldVector< K, 3 >& a, const Dune::FieldVector< K, 3 >& b)
+{
+    return a[ 0 ] * b[ 0 ] + a[ 1 ] * b[ 1 ] + a[ 2 ] * b[ 2 ];
+}
+
+template <class K>
+static inline K dot( const Dune::FieldVector< K, 3 >& a, const Dune::FieldMatrix< K, 3, 3 >& b, const int col)
+{
+    return a[ 0 ] * b[ 0 ][ col ] + a[ 1 ] * b[ 1 ][ col ] + a[ 2 ] * b[ 2 ][ col ];
+}
+
+template <typename K, class X, class Y>
+static inline void
+leftmultiply (Dune::FieldMatrix<K, 3, 3>& A, const Dune::FieldMatrix< K, 3, 3>& B, const Dune::FieldMatrix< K, 3, 3>& C)
+{
+    A[ 0 ][ 0 ] = B[ 0 ][ 0 ] * C[ 0 ][ 0 ] + B[ 0 ][ 1 ] * C[ 0 ][ 1 ] + B[ 0 ][ 2 ] * C[ 0 ][ 2 ];
+    A[ 0 ][ 1 ] = B[ 0 ][ 0 ] * C[ 1 ][ 0 ] + B[ 0 ][ 1 ] * C[ 1 ][ 1 ] + B[ 0 ][ 2 ] * C[ 1 ][ 2 ];
+    A[ 0 ][ 2 ] = B[ 0 ][ 0 ] * C[ 2 ][ 0 ] + B[ 0 ][ 1 ] * C[ 2 ][ 1 ] + B[ 0 ][ 2 ] * C[ 2 ][ 2 ];
+    A[ 1 ][ 0 ] = B[ 1 ][ 0 ] * C[ 0 ][ 0 ] + B[ 1 ][ 1 ] * C[ 0 ][ 1 ] + B[ 1 ][ 2 ] * C[ 0 ][ 2 ];
+    A[ 1 ][ 1 ] = B[ 1 ][ 0 ] * C[ 1 ][ 0 ] + B[ 1 ][ 1 ] * C[ 1 ][ 1 ] + B[ 1 ][ 2 ] * C[ 1 ][ 2 ];
+    A[ 1 ][ 2 ] = B[ 1 ][ 0 ] * C[ 2 ][ 0 ] + B[ 1 ][ 1 ] * C[ 2 ][ 1 ] + B[ 1 ][ 2 ] * C[ 2 ][ 2 ];
+    A[ 2 ][ 0 ] = B[ 2 ][ 0 ] * C[ 0 ][ 0 ] + B[ 2 ][ 1 ] * C[ 0 ][ 1 ] + B[ 2 ][ 2 ] * C[ 0 ][ 2 ];
+    A[ 2 ][ 1 ] = B[ 2 ][ 0 ] * C[ 1 ][ 0 ] + B[ 2 ][ 1 ] * C[ 1 ][ 1 ] + B[ 2 ][ 2 ] * C[ 1 ][ 2 ];
+    A[ 2 ][ 2 ] = B[ 2 ][ 0 ] * C[ 2 ][ 0 ] + B[ 2 ][ 1 ] * C[ 2 ][ 1 ] + B[ 2 ][ 2 ] * C[ 2 ][ 2 ];
+}
+
+template <typename K, class X, class Y>
+static inline void
+rightmultiply (Dune::FieldMatrix<K, 3, 3>& A, const Dune::FieldMatrix< K, 3, 3>& B, const Dune::FieldMatrix< K, 3, 3>& C)
+{
+    A[ 0 ][ 0 ] = B[ 0 ][ 0 ] * C[ 0 ][ 0 ] + B[ 0 ][ 1 ] * C[ 1 ][ 0 ] + B[ 0 ][ 2 ] * C[ 2 ][ 0 ];
+    A[ 0 ][ 1 ] = B[ 0 ][ 0 ] * C[ 0 ][ 1 ] + B[ 0 ][ 1 ] * C[ 1 ][ 1 ] + B[ 0 ][ 2 ] * C[ 2 ][ 1 ];
+    A[ 0 ][ 2 ] = B[ 0 ][ 0 ] * C[ 0 ][ 2 ] + B[ 0 ][ 1 ] * C[ 1 ][ 2 ] + B[ 0 ][ 2 ] * C[ 2 ][ 2 ];
+    A[ 1 ][ 0 ] = B[ 1 ][ 0 ] * C[ 0 ][ 0 ] + B[ 1 ][ 1 ] * C[ 1 ][ 0 ] + B[ 1 ][ 2 ] * C[ 2 ][ 0 ];
+    A[ 1 ][ 1 ] = B[ 1 ][ 0 ] * C[ 0 ][ 1 ] + B[ 1 ][ 1 ] * C[ 1 ][ 1 ] + B[ 1 ][ 2 ] * C[ 2 ][ 1 ];
+    A[ 1 ][ 2 ] = B[ 1 ][ 0 ] * C[ 0 ][ 2 ] + B[ 1 ][ 1 ] * C[ 1 ][ 2 ] + B[ 1 ][ 2 ] * C[ 2 ][ 2 ];
+    A[ 2 ][ 0 ] = B[ 2 ][ 0 ] * C[ 0 ][ 0 ] + B[ 2 ][ 1 ] * C[ 1 ][ 0 ] + B[ 2 ][ 2 ] * C[ 2 ][ 0 ];
+    A[ 2 ][ 1 ] = B[ 2 ][ 0 ] * C[ 0 ][ 1 ] + B[ 2 ][ 1 ] * C[ 1 ][ 1 ] + B[ 2 ][ 2 ] * C[ 2 ][ 1 ];
+    A[ 2 ][ 2 ] = B[ 2 ][ 0 ] * C[ 0 ][ 2 ] + B[ 2 ][ 1 ] * C[ 1 ][ 2 ] + B[ 2 ][ 2 ] * C[ 2 ][ 2 ];
+}
+
+template <typename K, class X, class Y>
+static Dune::FieldMatrix<K, 3, 3>&
+leftmultiply (Dune::FieldMatrix<K, 3, 3>& A, const Dune::FieldMatrix< K, 3, 3>& B)
+{
+    Dune::FieldMatrix< K, 3, 3 > tmp;
+
+    // transpose matrix
+    tmp[ 0 ][ 0 ] = A[ 0 ][ 0 ];
+    tmp[ 0 ][ 1 ] = A[ 1 ][ 0 ];
+    tmp[ 0 ][ 2 ] = A[ 2 ][ 0 ];
+    tmp[ 1 ][ 0 ] = A[ 0 ][ 1 ];
+    tmp[ 1 ][ 1 ] = A[ 1 ][ 1 ];
+    tmp[ 1 ][ 2 ] = A[ 2 ][ 1 ];
+    tmp[ 2 ][ 0 ] = A[ 0 ][ 2 ];
+    tmp[ 2 ][ 1 ] = A[ 1 ][ 2 ];
+    tmp[ 2 ][ 2 ] = A[ 2 ][ 2 ];
+
+    leftMultiply( A, B, tmp );
+    return A;
+}
+
+template<typename K, int m, int n, typename M2>
+static Dune::FieldMatrix<K, n, m>&
+rightmultiply (Dune::FieldMatrix<K, n, m>& A, const Dune::DenseMatrix<M2>& B)
+{
+  return A.rightmultiply( B );
+}
+
+template <typename K, class X, class Y>
+static Dune::FieldMatrix<K, 3, 3>&
+rightmultiply (Dune::FieldMatrix<K, 3, 3>& A, const Dune::FieldMatrix< K, 3, 3>& B)
+{
+    Dune::FieldMatrix< K, 3, 3 > tmp( A );
+    rightmultiply( A, tmp, B );
+    return A;
+}
 } // namespace MatrixBlockHelp
 
 template <class Scalar, int n, int m>
 class MatrixBlock : public Dune::FieldMatrix<Scalar, n, m>
 {
+    typedef MatrixBlock< Scalar, n, m> ThisType;
 public:
     typedef Dune::FieldMatrix<Scalar, n, m>  BaseType;
 
@@ -227,12 +356,37 @@ public:
     void invert()
     { Ewoms::MatrixBlockHelp::invertMatrix(asBase()); }
 
+    template<class X, class Y>
+    void mv (const X& x, Y& y) const { Ewoms::MatrixBlockHelp::mv( asBase(), x, y ); }
+
+    template<class X, class Y>
+    void umv (const X& x, Y& y) const { Ewoms::MatrixBlockHelp::umv( asBase(), x, y ); }
+
+    template<class X, class Y>
+    void mmv (const X& x, Y& y) const { Ewoms::MatrixBlockHelp::mmv( asBase(), x, y ); }
+
+    //! Multiplies M from the left to this matrix
+    template<typename M2>
+    ThisType& leftmultiply (const Dune::DenseMatrix<M2>& M)
+    {
+      return static_cast< ThisType& > (Ewoms::MatrixBlockHelp::leftmultiply( asBase(), static_cast< const BaseType& > (M) ));
+    }
+
+    //! Multiplies M from the right to this matrix
+    template<typename M2>
+    ThisType& rightmultiply (const Dune::DenseMatrix<M2>& M)
+    {
+      return static_cast< ThisType& > (Ewoms::MatrixBlockHelp::rightmultiply( asBase(), static_cast< const BaseType& > (M) ));
+    }
+
     const BaseType& asBase() const
     { return static_cast<const BaseType&>(*this); }
 
     BaseType& asBase()
     { return static_cast<BaseType&>(*this); }
 };
+
+
 
 } // namespace Ewoms
 
