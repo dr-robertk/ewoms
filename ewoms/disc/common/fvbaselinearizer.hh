@@ -54,6 +54,7 @@ namespace Ewoms {
 template<class TypeTag>
 class EcfvDiscretization;
 
+
 /*!
  * \ingroup FiniteVolumeDiscretizations
  *
@@ -94,8 +95,6 @@ class FvBaseLinearizer
     typedef typename GridView::template Codim<0>::Iterator ElementIterator;
 
     typedef GlobalEqVector Vector;
-
-    typedef typename SparseMatrixAdapter::IstlMatrix IstlMatrix;
 
     enum { numEq = GET_PROP_VALUE(TypeTag, NumEq) };
     enum { historySize = GET_PROP_VALUE(TypeTag, TimeDiscHistorySize) };
@@ -229,9 +228,6 @@ public:
      */
     void linearizeAuxiliaryEquations()
     {
-        // flush possible local caches into matrix structure
-        jacobian_->commit();
-
         auto& model = model_();
         const auto& comm = simulator_().gridView().comm();
         for (unsigned auxModIdx = 0; auxModIdx < model.numAuxiliaryModules(); ++auxModIdx) {
@@ -262,6 +258,9 @@ public:
             if (!succeeded)
                 throw Opm::NumericalIssue("linearization of an auxilary equation failed");
         }
+
+        // flush possible local caches into matrix structure
+        jacobian_->commit();
     }
 
     /*!
@@ -498,6 +497,9 @@ private:
         if(exceptionPtr) {
             std::rethrow_exception(exceptionPtr);
         }
+
+        // flush possible local caches into matrix structure
+        jacobian_->commit();
 
         applyConstraintsToLinearization_();
     }

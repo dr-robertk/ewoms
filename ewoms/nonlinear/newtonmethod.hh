@@ -369,11 +369,14 @@ public:
                 linearizeTimer_.start();
                 asImp_().linearizeDomain_();
                 asImp_().linearizeAuxiliaryEquations_();
+                // finalize the linearization process if not done already
+                linearizer.finalize();
                 linearizeTimer_.stop();
 
                 solveTimer_.start();
                 auto& residual = linearizer.residual();
                 const auto& jacobian = linearizer.jacobian();
+
                 linearSolver_.prepare(jacobian, residual);
                 linearSolver_.setResidual(residual);
                 linearSolver_.getResidual(residual);

@@ -37,6 +37,9 @@
 #include <ewoms/common/basicproperties.hh>
 #include <ewoms/io/vtkprimaryvarsmodule.hh>
 #include <ewoms/linear/parallelbicgstabbackend.hh>
+#include <ewoms/linear/parallelistlbackend.hh>
+#include <ewoms/linear/femsolverbackend.hh>
+#include <ewoms/linear/amgxsolverbackend.hh>
 
 BEGIN_PROPERTIES
 
@@ -54,10 +57,19 @@ NEW_PROP_TAG(ParallelBiCGStabLinearSolver);
 NEW_PROP_TAG(LocalLinearizerSplice);
 NEW_PROP_TAG(FiniteDifferenceLocalLinearizer);
 
+NEW_PROP_TAG(DiscreteFunctionSpace);
+
 SET_SPLICES(FvBaseDiscretization, LinearSolverSplice, LocalLinearizerSplice);
 
 //! use a parallel BiCGStab linear solver by default
+#if USE_AMGX_SOLVERS
+SET_TAG_PROP(FvBaseDiscretization, LinearSolverSplice, AmgXSolverBackend);
+#elif USE_DUNE_FEM_SOLVERS
+SET_TAG_PROP(FvBaseDiscretization, LinearSolverSplice, FemSolverBackend);
+#else
 SET_TAG_PROP(FvBaseDiscretization, LinearSolverSplice, ParallelBiCGStabLinearSolver);
+//SET_TAG_PROP(FvBaseDiscretization, LinearSolverSplice, ParallelIstlLinearSolver);
+#endif
 
 //! by default, use finite differences to linearize the system of PDEs
 SET_TAG_PROP(FvBaseDiscretization, LocalLinearizerSplice, FiniteDifferenceLocalLinearizer);
@@ -79,9 +91,6 @@ NEW_PROP_TAG(GridView);
 
 //! The class describing the stencil of the spatial discretization
 NEW_PROP_TAG(Stencil);
-
-//! The class describing the discrete function space when dune-fem is used, otherwise it points to the stencil class
-NEW_PROP_TAG(DiscreteFunctionSpace);
 
 //! The type of the problem
 NEW_PROP_TAG(Problem);

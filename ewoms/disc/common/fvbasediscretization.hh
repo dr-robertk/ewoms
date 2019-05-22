@@ -76,7 +76,13 @@
 #include <dune/fem/space/common/restrictprolongtuple.hh>
 #include <dune/fem/function/blockvectorfunction.hh>
 #include <dune/fem/misc/capabilities.hh>
+
+#if HAVE_PETSC
+#include <dune/fem/operator/linear/petscoperator.hh>
 #endif
+#include <dune/fem/operator/linear/istloperator.hh>
+#include <dune/fem/operator/linear/spoperator.hh>
+#endif // endif HAVE_DUNE_FEM
 
 #include <limits>
 #include <list>
@@ -130,7 +136,66 @@ SET_TYPE_PROP(FvBaseDiscretization, DiscExtensiveQuantities, Ewoms::FvBaseExtens
 //! Calculates the gradient of any quantity given the index of a flux approximation point
 SET_TYPE_PROP(FvBaseDiscretization, GradientCalculator, Ewoms::FvBaseGradientCalculator<TypeTag>);
 
-//! Set the type of a global jacobian matrix from the solution types
+//! Set the type of a global Jacobian matrix from the solution types
+#if HAVE_DUNE_FEM
+SET_PROP(FvBaseDiscretization, DiscreteFunction)
+{
+private:
+    typedef typename GET_PROP_TYPE(TypeTag, DiscreteFunctionSpace) DiscreteFunctionSpace;
+    typedef typename GET_PROP_TYPE(TypeTag, PrimaryVariables)      PrimaryVariables;
+public:
+    // discrete function storing solution data
+    typedef Dune::Fem::ISTLBlockVectorDiscreteFunction<DiscreteFunctionSpace, PrimaryVariables> type;
+};
+#endif
+
+#if USE_DUNE_FEM_SOLVERS
+SET_PROP(FvBaseDiscretization, SparseMatrixAdapter)
+{
+private:
+    typedef typename GET_PROP_TYPE(TypeTag, DiscreteFunctionSpace) DiscreteFunctionSpace;
+    typedef typename GET_PROP_TYPE(TypeTag, Scalar)                Scalar;
+    // discrete function storing solution data
+    typedef Dune::Fem::ISTLBlockVectorDiscreteFunction<DiscreteFunctionSpace> DiscreteFunction;
+
+#if USE_DUNE_FEM_PETSC_SOLVERS
+#warning "Using Dune-Fem PETSc solvers"
+    typedef Dune::Fem::PetscLinearOperator< DiscreteFunction, DiscreteFunction > LinearOperator;
+#elif USE_DUNE_FEM_VIENNACL_SOLVERS
+#warning "Using Dune-Fem ViennaCL solvers"
+    typedef Dune::Fem::SparseRowLinearOperator < DiscreteFunction, DiscreteFunction > LinearOperator;
+#else
+#warning "Using Dune-Fem ISTL solvers"
+    typedef Dune::Fem::ISTLLinearOperator < DiscreteFunction, DiscreteFunction > LinearOperator;
+#endif
+
+    struct FemMatrixBackend : public LinearOperator
+    {
+        typedef LinearOperator  ParentType;
+        typedef typename LinearOperator :: MatrixType    Matrix;
+        typedef typename ParentType :: MatrixBlockType   MatrixBlock;
+        template <class Simulator>
+        FemMatrixBackend( const Simulator& simulator )
+            : LinearOperator("eWoms::Jacobian", simulator.model().space(), simulator.model().space() )
+        {}
+
+        void commit()
+        {
+          this->flushAssembly();
+        }
+
+        template< class LocalBlock >
+        void addToBlock ( const size_t row, const size_t col, const LocalBlock& block )
+        {
+          this->addBlock( row, col, block );
+        }
+
+        void clearRow( const size_t row, const Scalar diag = 1.0 ) { this->unitRow( row ); }
+    };
+public:
+    typedef FemMatrixBackend type;
+};
+#else
 SET_PROP(FvBaseDiscretization, SparseMatrixAdapter)
 {
 private:
@@ -141,6 +206,7 @@ private:
 public:
     typedef typename Ewoms::Linear::IstlSparseMatrixAdapter<Block> type;
 };
+#endif
 
 //! The maximum allowed number of timestep divisions for the
 //! Newton solver
@@ -342,13 +408,15 @@ class FvBaseDiscretization
 
     typedef typename LocalResidual::LocalEvalBlockVector LocalEvalBlockVector;
 
+    typedef typename GET_PROP_TYPE(TypeTag, DiscreteFunctionSpace)    DiscreteFunctionSpace;
+
     class BlockVectorWrapper
     {
     protected:
         SolutionVector blockVector_;
     public:
-        BlockVectorWrapper(const std::string& name OPM_UNUSED, const size_t size)
-            : blockVector_(size)
+        BlockVectorWrapper(const std::string& name OPM_UNUSED, const DiscreteFunctionSpace& space)
+            : blockVector_(space.size())
         {}
 
         SolutionVector& blockVector()
@@ -358,14 +426,12 @@ class FvBaseDiscretization
     };
 
 #if HAVE_DUNE_FEM
-    typedef typename GET_PROP_TYPE(TypeTag, DiscreteFunctionSpace)    DiscreteFunctionSpace;
-
     // discrete function storing solution data
-    typedef Dune::Fem::ISTLBlockVectorDiscreteFunction<DiscreteFunctionSpace, PrimaryVariables> DiscreteFunction;
+    typedef typename GET_PROP_TYPE(TypeTag, DiscreteFunction)         DiscreteFunction;
 
     // problem restriction and prolongation operator for adaptation
-    typedef typename GET_PROP_TYPE(TypeTag, Problem)   Problem;
-    typedef typename Problem :: RestrictProlongOperator  ProblemRestrictProlongOperator;
+    typedef typename GET_PROP_TYPE(TypeTag, Problem)                  Problem;
+    typedef typename Problem :: RestrictProlongOperator               ProblemRestrictProlongOperator;
 
     // discrete function restriction and prolongation operator for adaptation
     typedef Dune::Fem::RestrictProlongDefault< DiscreteFunction > DiscreteFunctionRestrictProlong;
@@ -374,7 +440,6 @@ class FvBaseDiscretization
     typedef Dune::Fem::AdaptationManager<Grid, RestrictProlong  > AdaptationManager;
 #else
     typedef BlockVectorWrapper  DiscreteFunction;
-    typedef size_t              DiscreteFunctionSpace;
 #endif
 
     // copying a discretization object is not a good idea
@@ -394,14 +459,14 @@ public:
         , elementMapper_(gridView_)
         , vertexMapper_(gridView_)
 #endif
+#if HAVE_DUNE_FEM
+        , discreteFunctionSpace_( simulator.vanguard().gridPart() )
+#else
+        , discreteFunctionSpace_( asImp_().numGridDof() )
+#endif
         , newtonMethod_(simulator)
         , localLinearizer_(ThreadManager::maxThreads())
-        , linearizer_(new Linearizer())
-#if HAVE_DUNE_FEM
-        , space_( simulator.vanguard().gridPart() )
-#else
-        , space_( asImp_().numGridDof() )
-#endif
+        , linearizer_(new Linearizer( ))
         , enableGridAdaptation_( EWOMS_GET_PARAM(TypeTag, bool, EnableGridAdaptation) )
         , enableIntensiveQuantityCache_(EWOMS_GET_PARAM(TypeTag, bool, EnableIntensiveQuantityCache))
         , enableStorageCache_(EWOMS_GET_PARAM(TypeTag, bool, EnableStorageCache))
@@ -426,7 +491,7 @@ public:
 
         size_t numDof = asImp_().numGridDof();
         for (unsigned timeIdx = 0; timeIdx < historySize; ++timeIdx) {
-            solution_[timeIdx].reset(new DiscreteFunction("solution", space_));
+            solution_[timeIdx].reset(new DiscreteFunction("solution", discreteFunctionSpace_));
 
             if (storeIntensiveQuantities()) {
                 intensiveQuantityCache_[timeIdx].resize(numDof);
@@ -1091,6 +1156,16 @@ public:
     SolutionVector& solution(unsigned timeIdx)
     { return solution_[timeIdx]->blockVector(); }
 
+    template <class BVector>
+    void communicate( BVector& x ) const
+    {
+#if HAVE_DUNE_FEM
+        typedef Dune::Fem::ISTLBlockVectorDiscreteFunction<DiscreteFunctionSpace, typename BVector::block_type> DF;
+        DF tmpX("temp-x", discreteFunctionSpace_, x);
+        tmpX.communicate();
+#endif
+    }
+
   protected:
     /*!
      * \copydoc solution(int) const
@@ -1508,7 +1583,7 @@ public:
     void resetLinearizer ()
     {
         delete linearizer_;
-        linearizer_ = new Linearizer;
+        linearizer_ = new Linearizer();
         linearizer_->init(simulator_);
     }
 
@@ -1742,6 +1817,11 @@ public:
             solution(timeIdx).resize(numDof);
 
         auxMod->applyInitial();
+
+#if DUNE_VERSION_NEWER( DUNE_FEM, 2, 7 )
+        discreteFunctionSpace_.extendSize( asImp_().numAuxiliaryDof() );
+#endif
+
     }
 
     /*!
@@ -1807,6 +1887,11 @@ public:
 
     const Ewoms::Timer& updateTimer() const
     { return updateTimer_; }
+
+#if HAVE_DUNE_FEM
+    const DiscreteFunctionSpace& space() const { return discreteFunctionSpace_; }
+#endif
+
 
 protected:
     void resizeAndResetIntensiveQuantitiesCache_()
@@ -1878,8 +1963,17 @@ protected:
     ElementMapper elementMapper_;
     VertexMapper vertexMapper_;
 
+    DiscreteFunctionSpace discreteFunctionSpace_;
+
     // a vector with all auxiliary equations to be considered
     std::vector<BaseAuxiliaryModule<TypeTag>*> auxEqModules_;
+
+    mutable std::array< std::unique_ptr< DiscreteFunction >, historySize > solution_;
+
+#if HAVE_DUNE_FEM
+    std::unique_ptr< RestrictProlong  > restrictProlong_;
+    std::unique_ptr< AdaptationManager> adaptationManager_;
+#endif
 
     NewtonMethod newtonMethod_;
 
@@ -1898,15 +1992,6 @@ protected:
     // solution of the previous time step
     mutable IntensiveQuantitiesVector intensiveQuantityCache_[historySize];
     mutable std::vector<bool> intensiveQuantityCacheUpToDate_[historySize];
-
-    DiscreteFunctionSpace space_;
-    mutable std::array< std::unique_ptr< DiscreteFunction >, historySize > solution_;
-
-#if HAVE_DUNE_FEM
-    std::unique_ptr<RestrictProlong> restrictProlong_;
-    std::unique_ptr<AdaptationManager> adaptationManager_;
-#endif
-
 
     std::list<BaseOutputModule<TypeTag>*> outputModules_;
 
