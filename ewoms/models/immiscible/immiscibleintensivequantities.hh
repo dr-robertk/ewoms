@@ -69,6 +69,7 @@ class ImmiscibleIntensiveQuantities
     enum { enableEnergy = GET_PROP_VALUE(TypeTag, EnableEnergy) };
     enum { dimWorld = GridView::dimensionworld };
 
+
     typedef Opm::MathToolbox<Evaluation> Toolbox;
     typedef Dune::FieldMatrix<Scalar, dimWorld, dimWorld> DimMatrix;
     typedef Dune::FieldVector<Scalar, numPhases> PhaseVector;
@@ -115,7 +116,13 @@ public:
         Opm::Valgrind::CheckDefined(pC);
 
         // calculate relative permeabilities
-        MaterialLaw::relativePermeabilities(relativePermeability_, materialParams, fluidState_);
+        
+        //FluidState fluidStateFine;
+        //for index in the collumn
+        //fluidStateFine.setSaturation(phaseidx, ??) = reconstructSat(z, fluidState_.saturation(phaseIdx);
+        //MaterialLaw::relativePermeabilities(relativePermeabilityFine, materialParamsFine, fluidStateFine);
+        //relativePermeability_ += Perm*relativePermeabilityFine;
+        
         Opm::Valgrind::CheckDefined(relativePermeability_);
 
         const Evaluation& p0 = priVars.makeEvaluation(pressure0Idx, timeIdx);
