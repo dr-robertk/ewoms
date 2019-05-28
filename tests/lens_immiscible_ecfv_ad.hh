@@ -43,8 +43,9 @@ SET_TAG_PROP(LensProblemEcfvAd, SpatialDiscretizationSplice, EcfvDiscretization)
 // use automatic differentiation for this simulator
 SET_TAG_PROP(LensProblemEcfvAd, LocalLinearizerSplice, AutoDiffLocalLinearizer);
 
-// this problem works fine if the linear solver uses single precision scalars
-SET_TYPE_PROP(LensProblemEcfvAd, LinearSolverScalar, float);
+#warning WIP: only for testing!
+// use the dune-fem linear solver backend
+SET_TAG_PROP(LensProblemEcfvAd, LinearSolverSplice, FemSolverBackend);
 
 END_PROPERTIES
 

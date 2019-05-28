@@ -91,24 +91,6 @@ private:
 public:
     typedef Dune::Fem::FiniteVolumeSpace< FunctionSpace, GridPart, 0 > type;
 };
-#else
-SET_PROP(EcfvDiscretization, DiscreteFunctionSpace)
-{
-private:
-    enum { numEq = GET_PROP_VALUE(TypeTag, NumEq) };
-    struct DiscreteFunctionSpace
-    {
-        static const int dimRange = numEq ;
-        size_t numGridDofs_;
-        size_t extension_;
-        DiscreteFunctionSpace( const size_t numGridDofs )
-            : numGridDofs_( numGridDofs ), extension_(0) {}
-        void extendSize( const size_t extension ) { extension_ = extension; }
-        size_t size() const { return dimRange * (numGridDofs_ + extension_); }
-    };
-public:
-    typedef DiscreteFunctionSpace type;
-};
 #endif
 
 //! Set the border list creator for to the one of an element based
