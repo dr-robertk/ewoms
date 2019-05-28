@@ -77,11 +77,7 @@
 #include <dune/fem/function/blockvectorfunction.hh>
 #include <dune/fem/misc/capabilities.hh>
 
-#if HAVE_PETSC
-#include <dune/fem/operator/linear/petscoperator.hh>
-#endif
-#include <dune/fem/operator/linear/istloperator.hh>
-#include <dune/fem/operator/linear/spoperator.hh>
+#include <ewoms/linear/femsparsematrixadapter.hh>
 #endif // endif HAVE_DUNE_FEM
 
 #include <limits>
@@ -154,46 +150,20 @@ SET_PROP(FvBaseDiscretization, SparseMatrixAdapter)
 {
 private:
     typedef typename GET_PROP_TYPE(TypeTag, DiscreteFunctionSpace) DiscreteFunctionSpace;
-    typedef typename GET_PROP_TYPE(TypeTag, Scalar)                Scalar;
     // discrete function storing solution data
     typedef Dune::Fem::ISTLBlockVectorDiscreteFunction<DiscreteFunctionSpace> DiscreteFunction;
+public:
 
 #if USE_DUNE_FEM_PETSC_SOLVERS
 #warning "Using Dune-Fem PETSc solvers"
-    typedef Dune::Fem::PetscLinearOperator< DiscreteFunction, DiscreteFunction > LinearOperator;
+    typedef FemPetscMatrixAdapter< DiscreteFunction > type;
 #elif USE_DUNE_FEM_VIENNACL_SOLVERS
 #warning "Using Dune-Fem ViennaCL solvers"
-    typedef Dune::Fem::SparseRowLinearOperator < DiscreteFunction, DiscreteFunction > LinearOperator;
+    typedef FemSparseRowMatrixAdapter< DiscreteFunction > type;
 #else
 #warning "Using Dune-Fem ISTL solvers"
-    typedef Dune::Fem::ISTLLinearOperator < DiscreteFunction, DiscreteFunction > LinearOperator;
+    typedef FemISTLMatrixAdapter< DiscreteFunction > type;
 #endif
-
-    struct FemMatrixBackend : public LinearOperator
-    {
-        typedef LinearOperator  ParentType;
-        typedef typename LinearOperator :: MatrixType    Matrix;
-        typedef typename ParentType :: MatrixBlockType   MatrixBlock;
-        template <class Simulator>
-        FemMatrixBackend( const Simulator& simulator )
-            : LinearOperator("eWoms::Jacobian", simulator.model().space(), simulator.model().space() )
-        {}
-
-        void commit()
-        {
-          this->flushAssembly();
-        }
-
-        template< class LocalBlock >
-        void addToBlock ( const size_t row, const size_t col, const LocalBlock& block )
-        {
-          this->addBlock( row, col, block );
-        }
-
-        void clearRow( const size_t row, const Scalar diag = 1.0 ) { this->unitRow( row ); }
-    };
-public:
-    typedef FemMatrixBackend type;
 };
 #else
 SET_PROP(FvBaseDiscretization, SparseMatrixAdapter)
