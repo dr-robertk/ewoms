@@ -50,6 +50,7 @@
 #include <ewoms/parallel/gridcommhandles.hh>
 #include <ewoms/parallel/threadmanager.hh>
 #include <ewoms/linear/nullborderlistmanager.hh>
+#include <ewoms/linear/istlsparsematrixadapter.hh>
 #include <ewoms/common/simulator.hh>
 #include <ewoms/common/alignedallocator.hh>
 #include <ewoms/common/timer.hh>
@@ -75,8 +76,7 @@
 #include <dune/fem/space/common/restrictprolongtuple.hh>
 #include <dune/fem/function/blockvectorfunction.hh>
 #include <dune/fem/misc/capabilities.hh>
-#include <ewoms/linear/femsparsematrixadapter.hh>
-#endif // endif HAVE_DUNE_FEM
+#endif
 
 #include <limits>
 #include <list>
@@ -130,40 +130,7 @@ SET_TYPE_PROP(FvBaseDiscretization, DiscExtensiveQuantities, Ewoms::FvBaseExtens
 //! Calculates the gradient of any quantity given the index of a flux approximation point
 SET_TYPE_PROP(FvBaseDiscretization, GradientCalculator, Ewoms::FvBaseGradientCalculator<TypeTag>);
 
-//! Set the type of a global Jacobian matrix from the solution types
-#if HAVE_DUNE_FEM
-SET_PROP(FvBaseDiscretization, DiscreteFunction)
-{
-private:
-    typedef typename GET_PROP_TYPE(TypeTag, DiscreteFunctionSpace) DiscreteFunctionSpace;
-    typedef typename GET_PROP_TYPE(TypeTag, PrimaryVariables)      PrimaryVariables;
-public:
-    // discrete function storing solution data
-    typedef Dune::Fem::ISTLBlockVectorDiscreteFunction<DiscreteFunctionSpace, PrimaryVariables> type;
-};
-#endif
-
-#if USE_DUNE_FEM_SOLVERS
-SET_PROP(FvBaseDiscretization, SparseMatrixAdapter)
-{
-private:
-    typedef typename GET_PROP_TYPE(TypeTag, DiscreteFunctionSpace) DiscreteFunctionSpace;
-    // discrete function storing solution data
-    typedef Dune::Fem::ISTLBlockVectorDiscreteFunction<DiscreteFunctionSpace> DiscreteFunction;
-public:
-
-#if USE_DUNE_FEM_PETSC_SOLVERS
-#warning "Using Dune-Fem PETSc solvers"
-    typedef FemPetscMatrixAdapter< DiscreteFunction > type;
-#elif USE_DUNE_FEM_VIENNACL_SOLVERS
-#warning "Using Dune-Fem ViennaCL solvers"
-    typedef FemSparseRowMatrixAdapter< DiscreteFunction > type;
-#else
-#warning "Using Dune-Fem ISTL solvers"
-    typedef FemISTLMatrixAdapter< DiscreteFunction > type;
-#endif
-};
-#else
+//! Set the type of a global jacobian matrix from the solution types
 SET_PROP(FvBaseDiscretization, SparseMatrixAdapter)
 {
 private:
@@ -174,7 +141,6 @@ private:
 public:
     typedef typename Ewoms::Linear::IstlSparseMatrixAdapter<Block> type;
 };
-#endif
 
 //! The maximum allowed number of timestep divisions for the
 //! Newton solver

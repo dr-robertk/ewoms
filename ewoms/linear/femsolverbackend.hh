@@ -115,52 +115,9 @@ public:
     typedef Dune::Fem::ISTLBlockVectorDiscreteFunction<DiscreteFunctionSpace, PrimaryVariables> type;
 };
 
-SET_PROP(FemSolverBackend, SparseMatrixAdapter)
-{
-private:
-    typedef typename GET_PROP_TYPE(TypeTag, DiscreteFunctionSpace) DiscreteFunctionSpace;
-    typedef typename GET_PROP_TYPE(TypeTag, Scalar) Scalar;
-    // discrete function storing solution data
-    typedef Dune::Fem::ISTLBlockVectorDiscreteFunction<DiscreteFunctionSpace> DiscreteFunction;
-
-#if USE_DUNE_FEM_PETSC_SOLVERS
-#warning "Using Dune-Fem PETSc solvers"
-    typedef Dune::Fem::PetscLinearOperator<DiscreteFunction, DiscreteFunction> LinearOperator;
-#elif USE_DUNE_FEM_VIENNACL_SOLVERS
-#warning "Using Dune-Fem ViennaCL solvers"
-    typedef Dune::Fem::SparseRowLinearOperator <DiscreteFunction, DiscreteFunction> LinearOperator;
-#else
-#warning "Using Dune-Fem ISTL solvers"
-    typedef Dune::Fem::ISTLLinearOperator <DiscreteFunction, DiscreteFunction> LinearOperator;
-#endif
-
-    struct FemMatrixBackend : public LinearOperator
-    {
-        typedef LinearOperator ParentType;
-        typedef typename LinearOperator::MatrixType Matrix;
-        typedef typename ParentType::MatrixBlockType MatrixBlock;
-        template <class Simulator>
-        FemMatrixBackend(Simulator& simulator)
-            : LinearOperator("eWoms::Jacobian", space_, space_)
-            , space_(simulator.vanguard().gridPart())
-        {}
-
-        void commit()
-        { this->flushAssembly(); }
-
-        template <class LocalBlock>
-        void addToBlock (const size_t row, const size_t col, const LocalBlock& block)
-        { this->addBlock(row, col, block); }
-
-        void clearRow(const size_t row, const Scalar diag = 1.0)
-        { this->unitRow(row); }
-
-        DiscreteFunctionSpace space_;
-    };
-
-public:
-    typedef FemMatrixBackend type;
-};
+// todo
+SET_PROP_TYPE(FemSolverBackend, SparseMatrixAdapter, GET_PROP_TYPE( TypeTag,
+            FemSolverBackend:: ));
 
 
 END_PROPERTIES
@@ -180,7 +137,6 @@ protected:
 
     typedef typename GET_PROP_TYPE(TypeTag, Simulator) Simulator;
     typedef typename GET_PROP_TYPE(TypeTag, Scalar) Scalar;
-    typedef typename GET_PROP_TYPE(TypeTag, SparseMatrixAdapter) LinearOperator;
     typedef typename GET_PROP_TYPE(TypeTag, SparseMatrixAdapter) SparseMatrixAdapter;
     typedef typename GET_PROP_TYPE(TypeTag, GlobalEqVector) Vector;
     typedef typename GET_PROP_TYPE(TypeTag, GridView) GridView;
@@ -192,37 +148,31 @@ protected:
     typedef Dune::Fem::ISTLBlockVectorDiscreteFunction<DiscreteFunctionSpace>
         VectorWrapperDiscreteFunction;
 
-    template <int d, class LinOp>
-    struct SolverSelector
+    template <int d, class SparseMatBackend>
+    struct SolverSelector;
+
+    template <int d>
+    struct SolverSelector< d, FemSparseRowMatrixAdapter >
     {
         typedef Dune::Fem::KrylovInverseOperator<VectorWrapperDiscreteFunction>  type;
     };
 
 #if HAVE_PETSC
-    template <int d>
-    struct SolverSelector<d, Dune::Fem::PetscLinearOperator<VectorWrapperDiscreteFunction, VectorWrapperDiscreteFunction>>
+    template <int d >
+    struct SolverSelector<d, FemPetscMatrixAdapter >
     {
-        typedef Dune::Fem::PetscInverseOperator<VectorWrapperDiscreteFunction, LinearOperator>  type;
-    };
-#endif
-
-#if HAVE_VIENNACL
-    template <int d>
-    struct SolverSelector<d, Dune::Fem::SparseRowLinearOperator<VectorWrapperDiscreteFunction, VectorWrapperDiscreteFunction> >
-    {
-        typedef Dune::Fem::ViennaCLInverseOperator<VectorWrapperDiscreteFunction>  type;
+        typedef Dune::Fem::PetscInverseOperator<VectorWrapperDiscreteFunction>  type;
     };
 #endif
 
     template <int d>
-    struct SolverSelector<d, Dune::Fem::ISTLLinearOperator<VectorWrapperDiscreteFunction, VectorWrapperDiscreteFunction> >
+    struct SolverSelector<d, FemISTLMatrixAdapter >
     {
-        typedef Dune::Fem::ISTLBICGSTABOp<VectorWrapperDiscreteFunction, LinearOperator>  type;
+        typedef Dune::Fem::ISTLBICGSTABOp<VectorWrapperDiscreteFunction >  type;
     };
 
     // select solver type depending on linear operator type
-    typedef typename LinearOperator::ParentType Bla;
-    typedef typename SolverSelector<0, Bla>::type InverseLinearOperator;
+    typedef typename SolverSelector<0, SparseMatrixAdapter>::type InverseLinearOperator;
 
     enum { dimWorld = GridView::dimensionworld };
 
