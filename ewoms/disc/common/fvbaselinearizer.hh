@@ -54,7 +54,6 @@ namespace Ewoms {
 template<class TypeTag>
 class EcfvDiscretization;
 
-
 /*!
  * \ingroup FiniteVolumeDiscretizations
  *

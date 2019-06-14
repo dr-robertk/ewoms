@@ -28,6 +28,7 @@
 #ifndef EWOMS_LENS_PROBLEM_HH
 #define EWOMS_LENS_PROBLEM_HH
 
+#include <ewoms/linear/femsolverbackend.hh>
 #include <ewoms/io/structuredgridvanguard.hh>
 #include <ewoms/models/immiscible/immiscibleproperties.hh>
 #include <ewoms/disc/common/fvbaseadlocallinearizer.hh>
