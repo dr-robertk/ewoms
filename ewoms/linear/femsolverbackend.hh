@@ -29,29 +29,23 @@
 
 #include <ewoms/disc/common/fvbaseproperties.hh>
 
-#if USE_DUNE_FEM_SOLVERS
-
 #define DISABLE_AMG_DIRECTSOLVER 1
 #include <dune/fem/solver/istlinverseoperators.hh>
-#include <dune/fem/solver/petscinverseoperators.hh>
+//#include <dune/fem/solver/petscinverseoperators.hh>
 #include <dune/fem/solver/krylovinverseoperators.hh>
 
 #if HAVE_VIENNACL
 #include <dune/fem/solver/viennacl.hh>
 #endif
 
-
 #include <ewoms/common/genericguard.hh>
 #include <ewoms/common/propertysystem.hh>
 #include <ewoms/common/parametersystem.hh>
-
-#include <dune/grid/io/file/vtk/vtkwriter.hh>
-
-#include <dune/common/fvector.hh>
-
-
 #include <ewoms/linear/parallelbicgstabbackend.hh>
 #include <ewoms/linear/istlsolverwrappers.hh>
+
+#include <dune/grid/io/file/vtk/vtkwriter.hh>
+#include <dune/common/fvector.hh>
 
 #include <sstream>
 #include <memory>
@@ -71,6 +65,8 @@ NEW_TYPE_TAG(FemSolverBackend);
 SET_TYPE_PROP(FemSolverBackend,
               LinearSolverBackend,
               Ewoms::Linear::FemSolverBackend<TypeTag>);
+
+NEW_PROP_TAG(DiscreteFunction);
 
 //NEW_PROP_TAG(LinearSolverTolerance);
 NEW_PROP_TAG(LinearSolverMaxIterations);
@@ -109,6 +105,64 @@ SET_STRING_PROP(FemSolverBackend, FemSolverParameterFileName, "");
 //! make the linear solver shut up by default
 //SET_SCALAR_PROP(FemSolverBackend, LinearSolverTolerance, 0.01);
 
+SET_PROP(FemSolverBackend, DiscreteFunction)
+{
+private:
+    typedef typename GET_PROP_TYPE(TypeTag, DiscreteFunctionSpace) DiscreteFunctionSpace;
+    typedef typename GET_PROP_TYPE(TypeTag, PrimaryVariables) PrimaryVariables;
+public:
+    // discrete function storing solution data
+    typedef Dune::Fem::ISTLBlockVectorDiscreteFunction<DiscreteFunctionSpace, PrimaryVariables> type;
+};
+
+SET_PROP(FemSolverBackend, SparseMatrixAdapter)
+{
+private:
+    typedef typename GET_PROP_TYPE(TypeTag, DiscreteFunctionSpace) DiscreteFunctionSpace;
+    typedef typename GET_PROP_TYPE(TypeTag, Scalar) Scalar;
+    // discrete function storing solution data
+    typedef Dune::Fem::ISTLBlockVectorDiscreteFunction<DiscreteFunctionSpace> DiscreteFunction;
+
+#if USE_DUNE_FEM_PETSC_SOLVERS
+#warning "Using Dune-Fem PETSc solvers"
+    typedef Dune::Fem::PetscLinearOperator<DiscreteFunction, DiscreteFunction> LinearOperator;
+#elif USE_DUNE_FEM_VIENNACL_SOLVERS
+#warning "Using Dune-Fem ViennaCL solvers"
+    typedef Dune::Fem::SparseRowLinearOperator <DiscreteFunction, DiscreteFunction> LinearOperator;
+#else
+#warning "Using Dune-Fem ISTL solvers"
+    typedef Dune::Fem::ISTLLinearOperator <DiscreteFunction, DiscreteFunction> LinearOperator;
+#endif
+
+    struct FemMatrixBackend : public LinearOperator
+    {
+        typedef LinearOperator ParentType;
+        typedef typename LinearOperator::MatrixType Matrix;
+        typedef typename ParentType::MatrixBlockType MatrixBlock;
+        template <class Simulator>
+        FemMatrixBackend(Simulator& simulator)
+            : LinearOperator("eWoms::Jacobian", space_, space_)
+            , space_(simulator.vanguard().gridPart())
+        {}
+
+        void commit()
+        { this->flushAssembly(); }
+
+        template <class LocalBlock>
+        void addToBlock (const size_t row, const size_t col, const LocalBlock& block)
+        { this->addBlock(row, col, block); }
+
+        void clearRow(const size_t row, const Scalar diag = 1.0)
+        { this->unitRow(row); }
+
+        DiscreteFunctionSpace space_;
+    };
+
+public:
+    typedef FemMatrixBackend type;
+};
+
+
 END_PROPERTIES
 
 namespace Ewoms {
@@ -116,28 +170,7 @@ namespace Linear {
 /*!
  * \ingroup Linear
  *
- * \brief Provides the common code which is required by most linear solvers.
- *
- * This class provides access to all preconditioners offered by dune-istl using the
- * PreconditionerWrapper property:
- * \code
- * SET_TYPE_PROP(YourTypeTag, PreconditionerWrapper,
- *               Ewoms::Linear::PreconditionerWrapper$PRECONDITIONER<TypeTag>);
- * \endcode
- *
- * Where the choices possible for '\c $PRECONDITIONER' are:
- * - \c Jacobi: A Jacobi preconditioner
- * - \c GaussSeidel: A Gauss-Seidel preconditioner
- * - \c SSOR: A symmetric successive overrelaxation (SSOR) preconditioner
- * - \c SOR: A successive overrelaxation (SOR) preconditioner
- * - \c ILUn: An ILU(n) preconditioner
- * - \c ILU0: An ILU(0) preconditioner. The results of this
- *            preconditioner are the same as setting the
- *            PreconditionerOrder property to 0 and using the ILU(n)
- *            preconditioner. The reason for the existence of ILU0 is
- *            that it is computationally cheaper because it does not
- *            need to consider things which are only required for
- *            higher orders
+ * \brief Uses the dune-fem infrastructure to solve the linear system of equations.
  */
 template <class TypeTag>
 class FemSolverBackend
@@ -147,74 +180,74 @@ protected:
 
     typedef typename GET_PROP_TYPE(TypeTag, Simulator) Simulator;
     typedef typename GET_PROP_TYPE(TypeTag, Scalar) Scalar;
-    typedef typename GET_PROP_TYPE(TypeTag, SparseMatrixAdapter)   LinearOperator;
+    typedef typename GET_PROP_TYPE(TypeTag, SparseMatrixAdapter) LinearOperator;
+    typedef typename GET_PROP_TYPE(TypeTag, SparseMatrixAdapter) SparseMatrixAdapter;
     typedef typename GET_PROP_TYPE(TypeTag, GlobalEqVector) Vector;
     typedef typename GET_PROP_TYPE(TypeTag, GridView) GridView;
 
     typedef typename GET_PROP_TYPE(TypeTag, DiscreteFunctionSpace) DiscreteFunctionSpace;
-    typedef typename GET_PROP_TYPE(TypeTag, DiscreteFunction)      DiscreteFunction;
+    typedef typename GET_PROP_TYPE(TypeTag, DiscreteFunction) DiscreteFunction;
 
     // discrete function to wrap what is used as Vector in eWoms
-    typedef Dune::Fem::ISTLBlockVectorDiscreteFunction< DiscreteFunctionSpace >
+    typedef Dune::Fem::ISTLBlockVectorDiscreteFunction<DiscreteFunctionSpace>
         VectorWrapperDiscreteFunction;
 
     template <int d, class LinOp>
     struct SolverSelector
     {
-        typedef Dune::Fem::KrylovInverseOperator< VectorWrapperDiscreteFunction >  type;
+        typedef Dune::Fem::KrylovInverseOperator<VectorWrapperDiscreteFunction>  type;
     };
 
 #if HAVE_PETSC
     template <int d>
-    struct SolverSelector< d, Dune::Fem::PetscLinearOperator< VectorWrapperDiscreteFunction, VectorWrapperDiscreteFunction > >
+    struct SolverSelector<d, Dune::Fem::PetscLinearOperator<VectorWrapperDiscreteFunction, VectorWrapperDiscreteFunction>>
     {
-        typedef Dune::Fem::PetscInverseOperator< VectorWrapperDiscreteFunction, LinearOperator >  type;
+        typedef Dune::Fem::PetscInverseOperator<VectorWrapperDiscreteFunction, LinearOperator>  type;
     };
 #endif
 
 #if HAVE_VIENNACL
     template <int d>
-    struct SolverSelector< d, Dune::Fem::SparseRowLinearOperator< VectorWrapperDiscreteFunction, VectorWrapperDiscreteFunction > >
+    struct SolverSelector<d, Dune::Fem::SparseRowLinearOperator<VectorWrapperDiscreteFunction, VectorWrapperDiscreteFunction> >
     {
-        typedef Dune::Fem::ViennaCLInverseOperator< VectorWrapperDiscreteFunction >  type;
+        typedef Dune::Fem::ViennaCLInverseOperator<VectorWrapperDiscreteFunction>  type;
     };
 #endif
 
     template <int d>
-    struct SolverSelector< d, Dune::Fem::ISTLLinearOperator< VectorWrapperDiscreteFunction, VectorWrapperDiscreteFunction > >
+    struct SolverSelector<d, Dune::Fem::ISTLLinearOperator<VectorWrapperDiscreteFunction, VectorWrapperDiscreteFunction> >
     {
-        typedef Dune::Fem::ISTLBICGSTABOp< VectorWrapperDiscreteFunction, LinearOperator >  type;
+        typedef Dune::Fem::ISTLBICGSTABOp<VectorWrapperDiscreteFunction, LinearOperator>  type;
     };
 
     // select solver type depending on linear operator type
-    typedef typename SolverSelector<0, typename LinearOperator::ParentType > :: type   InverseLinearOperator;
+    typedef typename LinearOperator::ParentType Bla;
+    typedef typename SolverSelector<0, Bla>::type InverseLinearOperator;
 
     enum { dimWorld = GridView::dimensionworld };
 
 public:
-    FemSolverBackend(const Simulator& simulator)
+    FemSolverBackend(Simulator& simulator)
         : simulator_(simulator)
         , invOp_()
-        , rhs_( nullptr )
+        , rhs_(nullptr)
+        , space_(simulator.vanguard().gridPart())
     {
         std::string paramFileName = EWOMS_GET_PARAM(TypeTag, std::string, FemSolverParameterFileName);
-        if( paramFileName != "" )
-        {
-            Dune::Fem::Parameter::append( paramFileName );
-        }
-        else
-        {
+        if (paramFileName != "")
+            Dune::Fem::Parameter::append(paramFileName);
+        else {
             // default parameters
-            Dune::Fem::Parameter::append("fem.solver.errormeasure", "residualreduction" );
-            Dune::Fem::Parameter::append("fem.solver.verbose", "false" );
+            Dune::Fem::Parameter::append("fem.solver.errormeasure", "residualreduction");
+            Dune::Fem::Parameter::append("fem.solver.verbose", "false");
 
             // Krylov solver
-            Dune::Fem::Parameter::append("fem.solver.method",     "bicgstab" );
+            Dune::Fem::Parameter::append("fem.solver.method", "bicgstab");
 
             // Preconditioner
-            Dune::Fem::Parameter::append("fem.solver.preconditioning.method", "ilu" );
-            Dune::Fem::Parameter::append("fem.solver.preconditioning.level", "0" );
-            Dune::Fem::Parameter::append("fem.solver.preconditioning.relaxation", "0.9" );
+            Dune::Fem::Parameter::append("fem.solver.preconditioning.method", "ilu");
+            Dune::Fem::Parameter::append("fem.solver.preconditioning.level", "0");
+            Dune::Fem::Parameter::append("fem.solver.preconditioning.relaxation", "0.9");
         }
     }
 
@@ -262,13 +295,11 @@ public:
         Scalar linearSolverAbsTolerance = this->simulator_.model().newtonMethod().tolerance() / 100000.0;
 
         // reset linear solver
-        if( ! invOp_ )
-        {
-          invOp_.reset( new InverseLinearOperator( linearSolverTolerance, linearSolverAbsTolerance ) );
-        }
+        if (!invOp_)
+          invOp_.reset(new InverseLinearOperator(linearSolverTolerance, linearSolverAbsTolerance));
 
-        setMatrix( op );
-        setResidual( b );
+        setMatrix(op);
+        setResidual(b);
 
         // not needed
         asImp_().rescale_();
@@ -280,11 +311,7 @@ public:
      * This method also cares about synchronizing that vector with the peer processes.
      */
     void setResidual(const Vector& b)
-    {
-        // copy the interior values of the non-overlapping residual vector to the
-        // overlapping one
-        rhs_ = &b ;
-    }
+    { rhs_ = &b ; }
 
     /*!
      * \brief Retrieve the synchronized internal residual vector.
@@ -293,8 +320,7 @@ public:
      */
     void getResidual(Vector& b) const
     {
-        assert( rhs_ );
-        // copy residual
+        assert(rhs_);
         b = *rhs_;
     }
 
@@ -306,7 +332,7 @@ public:
      */
     void setMatrix(const SparseMatrixAdapter& op)
     {
-        invOp_.bind( op );
+        invOp_->bind(op);
     }
 
 
@@ -318,12 +344,12 @@ public:
     bool solve(Vector& x)
     {
         // wrap x into discrete function X (no copy)
-        VectorWrapperDiscreteFunction X( "FSB::x",   space(), x );
-        assert( rhs_ );
-        VectorWrapperDiscreteFunction B( "FSB::rhs", space(), *rhs_ );
+        VectorWrapperDiscreteFunction X("FSB::x", space_, x);
+        assert(rhs_);
+        VectorWrapperDiscreteFunction B("FSB::rhs", space_, *rhs_);
 
         // solve with right hand side rhs and store in x
-        (*invOp_)( B, X );
+        (*invOp_)(B, X);
 
         // return the result of the solver
         return invOp_->iterations() < 0 ? false : true;
@@ -332,8 +358,9 @@ public:
     /*!
      * \brief Return number of iterations used during last solve.
      */
-    size_t iterations () const {
-        assert( invOp_);
+    size_t iterations () const
+    {
+        assert(invOp_);
         return invOp_->iterations();
     }
 
@@ -344,32 +371,8 @@ protected:
     const Implementation& asImp_() const
     { return *static_cast<const Implementation *>(this); }
 
-    const DiscreteFunctionSpace& space() const {
-        return simulator_.model().space();
-    }
-
     void rescale_()
-    {
-        /*
-        const auto& overlap = overlappingMatrix_->overlap();
-        for (unsigned domesticRowIdx = 0; domesticRowIdx < overlap.numLocal(); ++domesticRowIdx) {
-            Index nativeRowIdx = overlap.domesticToNative(static_cast<Index>(domesticRowIdx));
-            auto& row = (*overlappingMatrix_)[domesticRowIdx];
-
-            auto colIt = row.begin();
-            const auto& colEndIt = row.end();
-            for (; colIt != colEndIt; ++ colIt) {
-                auto& entry = *colIt;
-                for (unsigned i = 0; i < entry.rows; ++i)
-                    entry[i] *= simulator_.model().eqWeight(nativeRowIdx, i);
-            }
-
-            auto& rhsEntry = (*overlappingb_)[domesticRowIdx];
-            for (unsigned i = 0; i < rhsEntry.size(); ++i)
-                rhsEntry[i] *= simulator_.model().eqWeight(nativeRowIdx, i);
-        }
-        */
-    }
+    { }
 
     void cleanup_()
     {
@@ -378,13 +381,10 @@ protected:
     }
 
     const Simulator& simulator_;
-
-    std::unique_ptr< InverseLinearOperator > invOp_;
-
+    std::unique_ptr<InverseLinearOperator> invOp_;
     const Vector* rhs_;
+    DiscreteFunctionSpace space_;
 };
 }} // namespace Linear, Ewoms
-
-#endif // HAVE_DUNE_FEM
 
 #endif

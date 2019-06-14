@@ -373,6 +373,8 @@ public:
                 linearizer.finalize();
                 linearizeTimer_.stop();
 
+                // finalize the linearization process if not done already
+                linearizer.finalize();
                 solveTimer_.start();
                 auto& residual = linearizer.residual();
                 const auto& jacobian = linearizer.jacobian();

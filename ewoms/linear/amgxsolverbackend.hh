@@ -31,7 +31,7 @@
 
 #if USE_AMGX_SOLVERS
 
-#if ! HAVE_PETSC || ! HAVE_AMGXSOLVER
+#if !HAVE_PETSC || !HAVE_AMGXSOLVER
 #error "PETSc and AmgXSolver is needed for the AMGX solver backend"
 #endif
 
@@ -130,28 +130,7 @@ namespace Linear {
 /*!
  * \ingroup Linear
  *
- * \brief Provides the common code which is required by most linear solvers.
- *
- * This class provides access to all preconditioners offered by dune-istl using the
- * PreconditionerWrapper property:
- * \code
- * SET_TYPE_PROP(YourTypeTag, PreconditionerWrapper,
- *               Ewoms::Linear::PreconditionerWrapper$PRECONDITIONER<TypeTag>);
- * \endcode
- *
- * Where the choices possible for '\c $PRECONDITIONER' are:
- * - \c Jacobi: A Jacobi preconditioner
- * - \c GaussSeidel: A Gauss-Seidel preconditioner
- * - \c SSOR: A symmetric successive overrelaxation (SSOR) preconditioner
- * - \c SOR: A successive overrelaxation (SOR) preconditioner
- * - \c ILUn: An ILU(n) preconditioner
- * - \c ILU0: An ILU(0) preconditioner. The results of this
- *            preconditioner are the same as setting the
- *            PreconditionerOrder property to 0 and using the ILU(n)
- *            preconditioner. The reason for the existence of ILU0 is
- *            that it is computationally cheaper because it does not
- *            need to consider things which are only required for
- *            higher orders
+ * \brief Provides a linear solver backend that utilizes the AMG-X package.
  */
 template <class TypeTag>
 class AmgXSolverBackend
@@ -166,37 +145,36 @@ protected:
     typedef typename GET_PROP_TYPE(TypeTag, GridView) GridView;
 
     typedef typename GET_PROP_TYPE(TypeTag, DiscreteFunctionSpace) DiscreteFunctionSpace;
-    typedef typename GET_PROP_TYPE(TypeTag, DiscreteFunction)      DiscreteFunction;
+    typedef typename GET_PROP_TYPE(TypeTag, DiscreteFunction) DiscreteFunction;
 
     // discrete function to wrap what is used as Vector in eWoms
-    typedef Dune::Fem::ISTLBlockVectorDiscreteFunction< DiscreteFunctionSpace >
+    typedef Dune::Fem::ISTLBlockVectorDiscreteFunction<DiscreteFunctionSpace>
         VectorWrapperDiscreteFunction;
-    typedef Dune::Fem::PetscDiscreteFunction< DiscreteFunctionSpace >
+    typedef Dune::Fem::PetscDiscreteFunction<DiscreteFunctionSpace>
         PetscDiscreteFunctionType;
 
     enum { dimWorld = GridView::dimensionworld };
 
 public:
-    AmgXSolverBackend(const Simulator& simulator)
+    AmgXSolverBackend(Simulator& simulator)
         : simulator_(simulator)
+        , space_(simulator.vanguard().gridPart())
         , amgxSolver_()
-        , rhs_( nullptr )
-        , iterations_( 0 )
+        , rhs_(nullptr)
+        , iterations_(0)
     {
         std::string paramFileName = EWOMS_GET_PARAM(TypeTag, std::string, FemSolverParameterFileName);
-        if( paramFileName != "" )
-        {
-            Dune::Fem::Parameter::append( paramFileName );
-        }
+        if (paramFileName != "")
+            Dune::Fem::Parameter::append(paramFileName);
     }
 
     ~AmgXSolverBackend()
-    { cleanup_();
-      if( A_ )
-      {
-          ::Dune::Petsc::MatDestroy( A_.operator ->() );
-          A_.reset();
-      }
+    {
+        cleanup_();
+        if (A_) {
+            ::Dune::Petsc::MatDestroy(A_.operator ->());
+            A_.reset();
+        }
     }
 
     /*!
@@ -246,23 +224,22 @@ public:
         //Scalar linearSolverTolerance = EWOMS_GET_PARAM(TypeTag, Scalar, LinearSolverTolerance);
         //Scalar linearSolverAbsTolerance = EWOMS_GET_PARAM(TypeTag, Scalar, LinearSolverAbsTolerance);
 
-        if( ! amgxSolver_ )
-        {
+        if (!amgxSolver_) {
             // reset linear solver
             std::string mode = EWOMS_GET_PARAM(TypeTag, std::string, AmgxSolverMode);
             std::string solverconfig = EWOMS_GET_PARAM(TypeTag, std::string, AmgxSolverConfigFileName);
 
-            amgxSolver_.reset( new AmgXSolver() );
+            amgxSolver_.reset(new AmgXSolver());
             amgxSolver_->initialize(PETSC_COMM_WORLD, mode, solverconfig);
 
-            if(! A_) {
-                A_.reset( new Mat() );
+            if (!A_) {
+                A_.reset(new Mat());
             }
 
             // convert MATBAIJ to MATAIJ which is needed by AmgXSolver
-            ::Dune::Petsc::ErrorCheck( ::MatConvert( op.petscMatrix(), MATAIJ, MAT_INITIAL_MATRIX, A_.operator ->() ) );
+            ::Dune::Petsc::ErrorCheck(::MatConvert(op.petscMatrix(), MATAIJ, MAT_INITIAL_MATRIX, A_.operator ->()));
             // set up the matrix used by AmgX
-            amgxSolver_->setA( *A_ );
+            amgxSolver_->setA(*A_);
         }
 
         // store pointer to right hand side
@@ -277,35 +254,31 @@ public:
     bool solve(Vector& x)
     {
         // wrap x into discrete function X (no copy)
-        VectorWrapperDiscreteFunction X( "FSB::x",   space(), x );
-        VectorWrapperDiscreteFunction B( "FSB::rhs", space(), *rhs_ );
+        VectorWrapperDiscreteFunction X("FSB::x", space_, x);
+        VectorWrapperDiscreteFunction B("FSB::rhs", space_, *rhs_);
 
-        if( ! petscRhs_ )
-        {
-            petscRhs_.reset( new PetscDiscreteFunctionType( "AMGX::rhs", space() ) );
-        }
-        if( ! petscX_ )
-        {
-            petscX_.reset( new PetscDiscreteFunctionType("AMGX::X", space()) );
-        }
+        if (!petscRhs_)
+            petscRhs_.reset(new PetscDiscreteFunctionType("AMGX::rhs", space_));
 
-        petscRhs_->assign( B );
-        petscX_->assign( X );
+        if (!petscX_)
+            petscX_.reset(new PetscDiscreteFunctionType("AMGX::X", space_));
+
+        petscRhs_->assign(B);
+        petscX_->assign(X);
 
         // solve with right hand side rhs and store in x
         Vec& p = *(petscX_->petscVec());
         Vec& rhs = *(petscRhs_->petscVec());
 
         try {
-            amgxSolver_->solve( p, rhs );
+            amgxSolver_->solve(p, rhs);
         }
-        catch (...)
-        {
+        catch (...) {
             OPM_THROW(Opm::NumericalIssue, "AmgXSolver: no convergence of linear solver!");
         }
 
         // copy result to ewoms solution
-        X.assign( *petscX_ );
+        X.assign(*petscX_);
 
         amgxSolver_->getIters(iterations_);
 
@@ -327,14 +300,9 @@ protected:
     const Implementation& asImp_() const
     { return *static_cast<const Implementation *>(this); }
 
-    const DiscreteFunctionSpace& space() const {
-        return simulator_.model().space();
-    }
-
     void cleanup_()
     {
-        if( amgxSolver_ )
-        {
+        if (amgxSolver_) {
             amgxSolver_->finalize();
             amgxSolver_.reset();
         }
@@ -347,12 +315,13 @@ protected:
 
     const Simulator& simulator_;
 
-    std::unique_ptr< Mat > A_;
+    DiscreteFunctionSpace space_;
+    std::unique_ptr<Mat> A_;
 
-    std::unique_ptr< PetscDiscreteFunctionType > petscRhs_;
-    std::unique_ptr< PetscDiscreteFunctionType > petscX_;
+    std::unique_ptr<PetscDiscreteFunctionType> petscRhs_;
+    std::unique_ptr<PetscDiscreteFunctionType> petscX_;
 
-    std::unique_ptr< AmgXSolver > amgxSolver_;
+    std::unique_ptr<AmgXSolver> amgxSolver_;
 
     Vector* rhs_;
     int iterations_;
