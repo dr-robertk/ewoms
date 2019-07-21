@@ -12,7 +12,6 @@ set (ewoms_CONFIG_VAR
   HAVE_DUNE_LOCALFUNCTIONS
   HAVE_DUNE_ISTL
   HAVE_DUNE_ALUGRID
-  HAVE_DUNE_FEM
   HAVE_ECL_INPUT
   HAVE_ECL_OUTPUT
   DUNE_AVOID_CAPABILITIES_IS_PARALLEL_DEPRECATION_WARNING
@@ -34,7 +33,6 @@ set (ewoms_DEPS
   "opm-material REQUIRED"
   "dune-localfunctions"
   "dune-alugrid"
-  "dune-fem"
   "opm-grid"
   # valgrind client requests
   "Valgrind"

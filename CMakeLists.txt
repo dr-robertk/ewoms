@@ -74,7 +74,6 @@ macro (config_hook)
   opm_need_version_of("dune-localfunctions")
   opm_need_version_of("dune-alugrid")
   opm_need_version_of("dune-istl")
-  opm_need_version_of("dune-fem")
 endmacro (config_hook)
 
 macro (files_hook)
@@ -174,11 +173,11 @@ opm_add_test(finger_immiscible_ecfv
 opm_add_test(finger_immiscible_vcfv
              CONDITION ${DUNE_ALUGRID_FOUND})
 
-opm_add_test(finger_immiscible_ecfv_adaptive
-             EXE_NAME finger_immiscible_ecfv
-             CONDITION ${DUNE_ALUGRID_FOUND} AND ${DUNE_FEM_FOUND}
-             NO_COMPILE
-             TEST_ARGS --enable-grid-adaptation=true --end-time=25e3)
+#opm_add_test(finger_immiscible_ecfv_adaptive
+#  EXE_NAME finger_immiscible_ecfv
+#  CONDITION ${DUNE_ALUGRID_FOUND} AND ${DUNE_FEM_FOUND}
+#  NO_COMPILE
+#  TEST_ARGS --enable-grid-adaptation=true --end-time=25e3)
 
 foreach(tapp co2injection_flash_ni_vcfv
              co2injection_flash_ni_ecfv
