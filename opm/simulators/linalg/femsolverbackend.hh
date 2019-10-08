@@ -226,9 +226,9 @@ public:
      */
     static void registerParameters()
     {
-        /*
         EWOMS_REGISTER_PARAM(TypeTag, Scalar, LinearSolverTolerance,
                              "The maximum allowed error between of the linear solver");
+        /*
         EWOMS_REGISTER_PARAM(TypeTag, int, LinearSolverMaxIterations,
                              "The maximum number of iterations of the linear solver");
         EWOMS_REGISTER_PARAM(TypeTag, int, LinearSolverVerbosity,
@@ -260,10 +260,10 @@ public:
 
     void prepare(const SparseMatrixAdapter& op, Vector& b)
     {
-        //Scalar linearSolverTolerance = EWOMS_GET_PARAM(TypeTag, Scalar, LinearSolverTolerance);
-        //Scalar linearSolverAbsTolerance = this->simulator_.model().newtonMethod().tolerance() / 100000.0;
-        Scalar linearSolverTolerance = 1e-3;//EWOMS_GET_PARAM(TypeTag, Scalar, LinearSolverTolerance);
+        Scalar linearSolverTolerance = EWOMS_GET_PARAM(TypeTag, Scalar, LinearSolverTolerance);
         Scalar linearSolverAbsTolerance = this->simulator_.model().newtonMethod().tolerance() / 100000.0;
+        //Scalar linearSolverTolerance = 1e-3;//EWOMS_GET_PARAM(TypeTag, Scalar, LinearSolverTolerance);
+        //Scalar linearSolverAbsTolerance = this->simulator_.model().newtonMethod().tolerance() / 100000.0;
 
         // reset linear solver
         if (!invOp_)
