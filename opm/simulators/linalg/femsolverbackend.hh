@@ -22,27 +22,29 @@
 */
 /*!
  * \file
- * \copydoc Ewoms::Linear::FemSolverBackend
+ * \copydoc Opm::Linear::FemSolverBackend
  */
-#ifndef EWOMS_FEM_SOLVER_BACKEND_HH
-#define EWOMS_FEM_SOLVER_BACKEND_HH
+#ifndef OPM_FEM_SOLVER_BACKEND_HH
+#define OPM_FEM_SOLVER_BACKEND_HH
 
-#include <ewoms/disc/common/fvbaseproperties.hh>
+#include <opm/models/discretization/common/fvbaseproperties.hh>
 
 #define DISABLE_AMG_DIRECTSOLVER 1
 #include <dune/fem/solver/istlinverseoperators.hh>
-//#include <dune/fem/solver/petscinverseoperators.hh>
 #include <dune/fem/solver/krylovinverseoperators.hh>
+#if HAVE_PETSC
+#include <dune/fem/solver/petscinverseoperators.hh>
+#endif
 
 #if HAVE_VIENNACL
 #include <dune/fem/solver/viennacl.hh>
 #endif
 
-#include <ewoms/common/genericguard.hh>
-#include <ewoms/common/propertysystem.hh>
-#include <ewoms/common/parametersystem.hh>
-#include <ewoms/linear/parallelbicgstabbackend.hh>
-#include <ewoms/linear/istlsolverwrappers.hh>
+#include <opm/models/utils/propertysystem.hh>
+#include <opm/models/utils/parametersystem.hh>
+#include <opm/simulators/linalg/parallelbicgstabbackend.hh>
+#include <opm/simulators/linalg/istlsolverwrappers.hh>
+#include <opm/simulators/linalg/femsparsematrixadapter.hh>
 
 #include <dune/grid/io/file/vtk/vtkwriter.hh>
 #include <dune/common/fvector.hh>
@@ -51,11 +53,11 @@
 #include <memory>
 #include <iostream>
 
-namespace Ewoms {
+namespace Opm {
 namespace Linear {
 template <class TypeTag>
 class FemSolverBackend;
-}} // namespace Linear, Ewoms
+}} // namespace Linear, Opm
 
 
 BEGIN_PROPERTIES
@@ -64,9 +66,10 @@ NEW_TYPE_TAG(FemSolverBackend);
 
 SET_TYPE_PROP(FemSolverBackend,
               LinearSolverBackend,
-              Ewoms::Linear::FemSolverBackend<TypeTag>);
+              Opm::Linear::FemSolverBackend<TypeTag>);
 
 NEW_PROP_TAG(DiscreteFunction);
+NEW_PROP_TAG(SparseMatrixAdapter);
 
 //NEW_PROP_TAG(LinearSolverTolerance);
 NEW_PROP_TAG(LinearSolverMaxIterations);
@@ -109,20 +112,31 @@ SET_PROP(FemSolverBackend, DiscreteFunction)
 {
 private:
     typedef typename GET_PROP_TYPE(TypeTag, DiscreteFunctionSpace) DiscreteFunctionSpace;
-    typedef typename GET_PROP_TYPE(TypeTag, PrimaryVariables) PrimaryVariables;
+
+    //typedef typename GET_PROP_TYPE(TypeTag, PrimaryVariables) PrimaryVariables;
 public:
     // discrete function storing solution data
-    typedef Dune::Fem::ISTLBlockVectorDiscreteFunction<DiscreteFunctionSpace, PrimaryVariables> type;
+    typedef Dune::Fem::ISTLBlockVectorDiscreteFunction<DiscreteFunctionSpace> type;
 };
 
-// todo
-SET_PROP_TYPE(FemSolverBackend, SparseMatrixAdapter, GET_PROP_TYPE( TypeTag,
-            FemSolverBackend:: ));
+//! Set the type of a global jacobian matrix for linear solvers that are based on
+//! dune-istl.
+SET_PROP(FemSolverBackend, SparseMatrixAdapter)
+{
+private:
+    typedef typename GET_PROP_TYPE(TypeTag, DiscreteFunctionSpace) DiscreteFunctionSpace;
+    //typedef typename GET_PROP_TYPE(TypeTag, PrimaryVariables) PrimaryVariables;
+    // discrete function storing solution data
+    typedef Dune::Fem::ISTLBlockVectorDiscreteFunction<DiscreteFunctionSpace> DiscreteFunction;
+
+public:
+    typedef Opm::Linear::FemSparseRowMatrixAdapter< DiscreteFunction > type;
+};
 
 
 END_PROPERTIES
 
-namespace Ewoms {
+namespace Opm {
 namespace Linear {
 /*!
  * \ingroup Linear
@@ -142,7 +156,9 @@ protected:
     typedef typename GET_PROP_TYPE(TypeTag, GridView) GridView;
 
     typedef typename GET_PROP_TYPE(TypeTag, DiscreteFunctionSpace) DiscreteFunctionSpace;
-    typedef typename GET_PROP_TYPE(TypeTag, DiscreteFunction) DiscreteFunction;
+    typedef typename GET_PROP_TYPE(TypeTag, PrimaryVariables) PrimaryVariables;
+    // discrete function storing solution data
+    typedef Dune::Fem::ISTLBlockVectorDiscreteFunction<DiscreteFunctionSpace, PrimaryVariables> DiscreteFunction;
 
     // discrete function to wrap what is used as Vector in eWoms
     typedef Dune::Fem::ISTLBlockVectorDiscreteFunction<DiscreteFunctionSpace>
@@ -151,22 +167,22 @@ protected:
     template <int d, class SparseMatBackend>
     struct SolverSelector;
 
-    template <int d>
-    struct SolverSelector< d, FemSparseRowMatrixAdapter >
+    template <int d, class DF>
+    struct SolverSelector< d, FemSparseRowMatrixAdapter< DF > >
     {
         typedef Dune::Fem::KrylovInverseOperator<VectorWrapperDiscreteFunction>  type;
     };
 
 #if HAVE_PETSC
-    template <int d >
-    struct SolverSelector<d, FemPetscMatrixAdapter >
+    template <int d, class DF >
+    struct SolverSelector<d, FemPetscMatrixAdapter< DF > >
     {
         typedef Dune::Fem::PetscInverseOperator<VectorWrapperDiscreteFunction>  type;
     };
 #endif
 
-    template <int d>
-    struct SolverSelector<d, FemISTLMatrixAdapter >
+    template <int d, class DF >
+    struct SolverSelector<d, FemISTLMatrixAdapter< DF > >
     {
         typedef Dune::Fem::ISTLBICGSTABOp<VectorWrapperDiscreteFunction >  type;
     };
@@ -183,13 +199,14 @@ public:
         , rhs_(nullptr)
         , space_(simulator.vanguard().gridPart())
     {
-        std::string paramFileName = EWOMS_GET_PARAM(TypeTag, std::string, FemSolverParameterFileName);
+        std::string paramFileName;// = EWOMS_GET_PARAM(TypeTag, std::string, FemSolverParameterFileName);
         if (paramFileName != "")
             Dune::Fem::Parameter::append(paramFileName);
         else {
             // default parameters
             Dune::Fem::Parameter::append("fem.solver.errormeasure", "residualreduction");
-            Dune::Fem::Parameter::append("fem.solver.verbose", "false");
+            Dune::Fem::Parameter::append("fem.solver.verbose", "true");
+            Dune::Fem::Parameter::append("fem.verboserank", "0");
 
             // Krylov solver
             Dune::Fem::Parameter::append("fem.solver.method", "bicgstab");
@@ -209,6 +226,7 @@ public:
      */
     static void registerParameters()
     {
+        /*
         EWOMS_REGISTER_PARAM(TypeTag, Scalar, LinearSolverTolerance,
                              "The maximum allowed error between of the linear solver");
         EWOMS_REGISTER_PARAM(TypeTag, int, LinearSolverMaxIterations,
@@ -230,6 +248,7 @@ public:
         EWOMS_REGISTER_PARAM(TypeTag, std::string, FemSolverParameterFileName,
                              "The name of the file which contains the parameters for the DUNE-FEM solvers");
 
+                             */
     }
 
     /*!
@@ -239,9 +258,11 @@ public:
     void eraseMatrix()
     { cleanup_(); }
 
-    void prepare(const LinearOperator& op, Vector& b)
+    void prepare(const SparseMatrixAdapter& op, Vector& b)
     {
-        Scalar linearSolverTolerance = EWOMS_GET_PARAM(TypeTag, Scalar, LinearSolverTolerance);
+        //Scalar linearSolverTolerance = EWOMS_GET_PARAM(TypeTag, Scalar, LinearSolverTolerance);
+        //Scalar linearSolverAbsTolerance = this->simulator_.model().newtonMethod().tolerance() / 100000.0;
+        Scalar linearSolverTolerance = 1e-3;//EWOMS_GET_PARAM(TypeTag, Scalar, LinearSolverTolerance);
         Scalar linearSolverAbsTolerance = this->simulator_.model().newtonMethod().tolerance() / 100000.0;
 
         // reset linear solver
@@ -335,6 +356,6 @@ protected:
     const Vector* rhs_;
     DiscreteFunctionSpace space_;
 };
-}} // namespace Linear, Ewoms
+}} // namespace Linear, Opm
 
 #endif

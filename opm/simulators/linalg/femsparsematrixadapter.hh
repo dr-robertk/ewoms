@@ -22,10 +22,10 @@
 */
 /*!
  * \file
- * \copydoc Ewoms::Linear::FemSparseMatrixAdapter
+ * \copydoc Opm::Linear::FemSparseMatrixAdapter
  */
-#ifndef EWOMS_FEM_SPARSE_MATRIX_ADAPTER_HH
-#define EWOMS_FEM_SPARSE_MATRIX_ADAPTER_HH
+#ifndef OPM_FEM_SPARSE_MATRIX_ADAPTER_HH
+#define OPM_FEM_SPARSE_MATRIX_ADAPTER_HH
 
 // this code only works with dune-fem available
 #if HAVE_DUNE_FEM
@@ -43,7 +43,7 @@
 #include <dune/fem/operator/linear/spoperator.hh>
 
 
-namespace Ewoms {
+namespace Opm {
 namespace Linear {
 
 /*!
@@ -64,7 +64,7 @@ struct FemSparseMatrixAdapter : public LinearOperator
 
     template <class Simulator>
     FemSparseMatrixAdapter( const Simulator& simulator )
-        : LinearOperator("eWoms::Jacobian", simulator.model().space(), simulator.model().space() )
+        : LinearOperator("Opm::Jacobian", simulator.model().space(), simulator.model().space() )
     {}
 
     void commit()
@@ -94,7 +94,7 @@ template <class DiscreteFunction>
 using FemISTLMatrixAdapter = FemSparseMatrixAdapter< Dune::Fem::ISTLLinearOperator< DiscreteFunction, DiscreteFunction > >;
 #endif
 
-}} // namespace Linear, Ewoms
+}} // namespace Linear, Opm
 
 #endif // DUNE_VERSION_NEWER(DUNE_FEM, 2, 7)
 #endif // HAVE_DUNE_FEM
